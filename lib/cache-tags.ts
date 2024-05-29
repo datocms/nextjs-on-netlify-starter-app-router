@@ -24,9 +24,3 @@ export function parseCommaSeparatedTagString(
 
   return (string.split(" ") || []) as CacheTag[];
 }
-
-export {
-  associateFetchIdToTags,
-  retrieveFetchIdsByTags,
-  deleteTags,
-} from "./vercel-kv";
