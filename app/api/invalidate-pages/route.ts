@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { CacheTag } from "@/lib/cache-tags";
-import { revalidateQueriesUsingCacheTags } from "@/lib/vercel-cache-revalidate-strategy";
+import { invalidateCacheTags } from "@/lib/netlify-invalidation-strategy";
 
 export const dynamic = "force-dynamic"; // defaults to auto
 
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     (tag: string) => tag as CacheTag,
   );
 
-  revalidateQueriesUsingCacheTags(cacheTags);
+  await invalidateCacheTags(cacheTags);
 
   return NextResponse.json({ cacheTags });
 }
