@@ -53,7 +53,7 @@ export async function executeQuery(query = "", variables = {}) {
    */
   const tags = parseCommaSeparatedTagString(
     response.headers.get("x-cache-tags"),
-  );
+  ).map((tag) => tag.toLowerCase());
 
   /**
    * We strongly leverage request memoization here: what follows is the same
