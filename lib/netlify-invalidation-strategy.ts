@@ -1,9 +1,9 @@
-import { purgeCache } from '@netlify/functions';
+import { revalidateTag } from "next/cache";
 
 import type { CacheTag } from './cache-tags';
 
 export async function invalidateCacheTags(cacheTags: CacheTag[]) {
-	await purgeCache({
-		tags: cacheTags
-	});
+  for (const tag of cacheTags) {
+    revalidateTag(tag);
+  }
 }
