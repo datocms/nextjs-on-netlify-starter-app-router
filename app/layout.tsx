@@ -24,7 +24,9 @@ export default async function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <Header />
-        <main>{children}</main>
+        {children}
+        <hr/>
+        <p>Page built on {new Date().toISOString()}</p>
       </body>
     </html>
   );
