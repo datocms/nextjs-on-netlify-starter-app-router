@@ -1,9 +1,87 @@
-import {
-  CacheTag,
-  parseCommaSeparatedTagString,
-} from "./cache-tags";
+import { print } from "graphql";
+import type { TadaDocumentNode } from "gql.tada";
 
-async function fetchFromDatoCMS(query: string, variables = {}, tags: CacheTag[]) {
+import { CacheTag, parseSpaceSeparatedTagString } from "./cache-tags";
+
+/**
+ * `executeQuery` uses `fetch` to make a request to the DatoCMS GraphQL API.
+ * While executing the query, this function also stores the result in the cache
+ * and marks them with cache data returned from DatoCMS.
+ */
+export async function executeQuery<
+  Result = unknown,
+  Variables = Record<string, unknown>
+>(query: TadaDocumentNode<Result, Variables>, variables?: Variables) {
+  if (!query) {
+    throw new Error(`Query is not valid`);
+  }
+
+  /**
+   * Executes a GraphQL query on DatoCMS API.
+   */
+  const response = await fetchFromDatoCMS(query, variables, []);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch data: ${JSON.stringify(response)}`);
+  }
+
+  const { data, errors } = (await response.json()) as {
+    data: Result;
+    errors?: unknown;
+  };
+
+  if (errors) {
+    throw new Error(
+      `Something went wrong while executing the query: ${JSON.stringify(
+        errors
+      )}`
+    );
+  }
+
+  /**
+   * Converts the string of cache tags received via headers into an array of
+   * tags of `CacheTag` type.
+   */
+  const cacheTags = parseSpaceSeparatedTagString(
+    response.headers.get("x-cache-tags")
+  );
+
+  /**
+   * We strongly leverage the data cache: what follows is the same identical
+   * request we did before: we only add the cache tags we just retrieved.
+   *
+   * What happens behind the curtains is that `fetch` leverages cache (so no
+   * second call to DatoCMS) and marks the request with the tags we pass: it's a
+   * win-win!
+   *
+   * There's a little bit of complexity due to the limitations on the number of
+   * tags supported by the `fetch`: they must be 64 at most. So we cycle in
+   * batches of maximum 64 tags and execute the same request once for each
+   * batch.
+   */
+  for (let position = 0; position < cacheTags.length; position += BATCH_SIZE) {
+    const batch = cacheTags.slice(position, position + BATCH_SIZE);
+
+    await fetchFromDatoCMS(query, variables, batch);
+  }
+
+  /**
+   * For educational purpose, tags are returned together with the data: in a
+   * real-world application this is probably not needed.
+   */
+  return { data, cacheTags };
+}
+
+const BATCH_SIZE = 64;
+
+async function fetchFromDatoCMS<
+  Result = unknown,
+  Variables = Record<string, unknown>
+>(
+  query: TadaDocumentNode<Result, Variables>,
+  variables: Variables | undefined = undefined,
+  tags: CacheTag[]
+) {
   return fetch("https://graphql.datocms.com/", {
     method: "POST",
     // Headers are used to instruct DatoCMS on how to treat the request:
@@ -15,60 +93,16 @@ async function fetchFromDatoCMS(query: string, variables = {}, tags: CacheTag[])
       // - Finally, return the cache tags together with the content.
       "X-Cache-Tags": "true",
     },
-    body: JSON.stringify({ query, variables }),
-    // Next uses some reasonable default for caching, but we explicite them all
+    body: JSON.stringify({ query: print(query), variables }),
+
+    // Next uses some default for caching, but we explicite them all:
+    // - we want Next.js to cache the request, even if POST requests are usually
+    //   not cached.
     cache: "force-cache",
     next: {
+      // - we mark the request with the cache tags returned by DatoCMS, so that
+      //   we'll be able to invalidate any of them later.
       tags,
-    }
+    },
   });
-}
-
-/**
- * `executeQuery` uses `fetch` to make a request to the
- * DatoCMS GraphQL API
- */
-export async function executeQuery(query = "", variables = {}) {
-  if (!query) {
-    throw new Error(`Query is not valid`);
-  }
-
-  const response = await fetchFromDatoCMS(query, variables, [])
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch data: ${JSON.stringify(response)}`);
-  }
-
-  const { data, errors } = await response.json();
-
-  if (errors) {
-    throw new Error(
-      `Something went wrong while executing the query: ${JSON.stringify(errors)}`,
-    );
-  }
-
-  /**
-   * Converts the string of cache tags received via headers into an array of
-   * tags of `CacheTag` type.
-   */
-  const tags = parseCommaSeparatedTagString(
-    response.headers.get("x-cache-tags"),
-  ).map((tag) => tag.toLowerCase() as CacheTag);
-
-  /**
-   * We strongly leverage request memoization here: what follows is the same
-   * identical request we did before: we only add the cache tags we just
-   * retrieved.
-   *
-   * What happens behind the curtains is that `fetch` leverages the request
-   * cache (so no second call to DatoCMS) and marks the request with the tags we
-   * pass: it's a win-win! 
-   */
-  await fetchFromDatoCMS(query, variables, tags)
-
-  /**
-   * For educational purpose, tags are returned together with the data: in a
-   * real-world application this is probably not needed.
-   */
-  return { data, tags };
 }

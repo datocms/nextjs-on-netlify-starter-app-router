@@ -1,15 +1,27 @@
-import Link from "next/link";
 import React from "react";
 
 import { executeQuery } from "@/lib/fetch-contents";
+import { graphql } from "@/lib/graphql";
+import { ResponsiveImage } from "@/fragments/responsive-image";
+import ContentImage from "@/components/ResponsiveImage";
 
-const AUTHOR_QUERY = `
-query Author($id: ItemId) {
-  author(filter: {id: {eq: $id}}) {
-    name
-  }
-}
-`;
+const AUTHOR_QUERY = graphql(
+  `
+    query Author($id: ItemId) {
+      author(filter: { id: { eq: $id } }) {
+        name
+        picture {
+          responsiveImage(
+            imgixParams: { fm: jpg, fit: crop, w: 2000, h: 1000 }
+          ) {
+            ...ResponsiveImage
+          }
+        }
+      }
+    }
+  `,
+  [ResponsiveImage]
+);
 
 export const dynamic = "error";
 
@@ -21,25 +33,32 @@ type Props = {
 async function Page({ params }: Props) {
   const { id } = params;
 
-  const { data: authorData, tags: authorTags } = await executeQuery(
+  const { data: authorData, cacheTags: authorTags } = await executeQuery(
     AUTHOR_QUERY,
-    { id },
+    { id }
   );
 
   const { author } = authorData;
 
+  if (!author) return null;
+
   return (
     <>
-      <h1>{author.name}</h1>
-
-      <footer>
-        <p>
-          Cache tags from page queries:
-          <code>
-            {JSON.stringify(authorTags)}
-          </code>
-        </p>
-      </footer>
+      <article className="grid">
+        {author.picture?.responsiveImage && (
+          <ContentImage responsiveImage={author.picture.responsiveImage} />
+        )}
+        <h1>
+          <span
+            data-tooltip={`The content of this page is generated with a GraphQL query that also returned these cache tags: "${authorTags.join(
+              ", "
+            )}"`}
+            data-placement="bottom"
+          >
+            {author.name}
+          </span>
+        </h1>
+      </article>
     </>
   );
 }
